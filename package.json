@@ -1,0 +1,10 @@
+{
+  "name": "expiry-alert-sales-demo",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "install:all": "npm install",
+    "dev": "node server/src/index.js",
+    "start": "node server/src/index.js"
+  }
+}

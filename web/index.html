@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Expiry Alert System</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="top-nav">
+    <a href="/" class="brand">Expiry Alert System</a>
+    <nav>
+      <a href="/dashboard">Dashboard</a>
+      <a href="/logs">Activity Log</a>
+      <a href="/settings">Settings</a>
+    </nav>
+  </header>
+  <main id="app"></main>
+  <div id="toast"></div>
+<script>
+const app = document.getElementById('app');
+const toastEl = document.getElementById('toast');
+const path = location.pathname;
+let state = { items: [], logs: [], kpis: null };
+
+const toast = (msg, type='success') => {
+ toastEl.innerHTML = `<div class="toast ${type}"><span>${msg}</span><button onclick="this.parentElement.remove()">×</button></div>`;
+};
+const api = async (url, method='GET') => {
+ const res = await fetch(url, {method});
+ const json = await res.json();
+ if (!res.ok) throw new Error(json.error || 'Request failed');
+ return json;
+};
+const badge = (s) => `<span class="badge ${s.toLowerCase()}">${s}</span>`;
+
+const landing = () => app.innerHTML = `<section class="card hero"><h1>Expiry Alert System</h1><p>Auto-alert contracts, visas, calibration, training, licenses—no more missed deadlines.</p><a class="btn primary" href="/dashboard">Try Demo</a></section>
+${['Problem','Solution','How it works','Use cases','Pricing placeholder'].map(t=>`<section class="card"><h2>${t}</h2><p>${({Problem:'Expiry deadlines are spread across teams and spreadsheets.',Solution:'Track due dates in one place and trigger reminders automatically.','How it works':'Capture items, score urgency, send alerts, close tasks with logs.','Use cases':'Contract renewal, visa/work permit, calibration, training, supplier audits, fire inspections, license renewal.','Pricing placeholder':'Starter / Growth / Enterprise package options.'})[t]}</p></section>`).join('')}`;
+
+const dashboard = async () => {
+  const data = await api('/api/items'); state.items = data.items; state.kpis = data.kpis;
+  const cats=[...new Set(state.items.map(i=>i.category))];
+  app.innerHTML = `<div class="page-header"><h1>Dashboard</h1><div><button class="btn" id="simulate">Simulate new items</button><button class="btn" id="reset">Reset demo</button></div></div>
+  <div class="kpi-grid">${Object.entries({'Total items':data.kpis.totalItems,'Expiring in 7 days':data.kpis.expiringIn7Days,'Expiring in 30 days':data.kpis.expiringIn30Days,'Overdue':data.kpis.overdue,'Notified today':data.kpis.notifiedToday}).map(([k,v])=>`<div class="card"><h3>${k}</h3><strong>${v}</strong></div>`).join('')}</div>
+  <div class="card filters"><select id="fcat"><option value="">All Categories</option>${cats.map(c=>`<option>${c}</option>`).join('')}</select><select id="fsev"><option value="">All Severity</option><option>OK</option><option>Warning</option><option>Critical</option><option>Overdue</option></select><select id="fstatus"><option value="">All Status</option><option>OPEN</option><option>NOTIFIED</option><option>DONE</option></select><input id="fstart" type="date"><input id="fend" type="date"><input id="fsearch" placeholder="Search ItemName/Owner"></div>
+  <div id="rows"></div>`;
+  const renderRows = () => {
+    const f={cat:fcat.value,sev:fsev.value,status:fstatus.value,start:fstart.value,end:fend.value,search:fsearch.value.toLowerCase()};
+    const rows=state.items.filter(i=>(!f.cat||i.category===f.cat)&&(!f.sev||i.severity===f.sev)&&(!f.status||i.status===f.status)&&(!f.start||i.dueDate.slice(0,10)>=f.start)&&(!f.end||i.dueDate.slice(0,10)<=f.end)&&(!f.search||i.itemName.toLowerCase().includes(f.search)||i.owner.toLowerCase().includes(f.search)));
+    if(!rows.length){rowsEl.innerHTML='<div class="card">No items match the selected filters.</div>';return;}
+    rowsEl.innerHTML=`<table class="data-table desktop-only"><thead><tr><th>ItemID</th><th>ItemName</th><th>Category</th><th>Owner</th><th>DueDate</th><th>DaysLeft</th><th>Severity</th><th>Status</th><th>LastNotifiedAt</th><th>Actions</th></tr></thead><tbody>${rows.map(i=>`<tr><td>${i.itemId}</td><td>${i.itemName}</td><td>${i.category}</td><td>${i.owner}</td><td>${i.dueDate.slice(0,10)}</td><td>${i.daysLeft}</td><td>${badge(i.severity)}</td><td>${i.status}</td><td>${i.lastNotifiedAt?new Date(i.lastNotifiedAt).toLocaleString():'—'}</td><td><button onclick="act('${i.itemId}','notify')">Send test alert</button><button onclick="act('${i.itemId}','done')">Mark as DONE</button></td></tr>`).join('')}</tbody></table>
+    <div class="mobile-cards">${rows.map(i=>`<div class="card"><h3>${i.itemName}</h3><p>${i.itemId} · ${i.owner}</p><p>Due ${i.dueDate.slice(0,10)} (${i.daysLeft} days)</p><p>${badge(i.severity)} ${i.status}</p><button onclick="act('${i.itemId}','notify')">Send test alert</button><button onclick="act('${i.itemId}','done')">Mark as DONE</button></div>`).join('')}</div>`;
+  };
+  window.rowsEl=document.getElementById('rows');
+  ['fcat','fsev','fstatus','fstart','fend','fsearch'].forEach(id=>window[id]=document.getElementById(id));
+  ['fcat','fsev','fstatus','fstart','fend','fsearch'].forEach(id=>document.getElementById(id).oninput=renderRows);
+  document.getElementById('simulate').onclick=async()=>{await api('/api/items/simulate','POST');toast('Mock items added.');dashboard();};
+  document.getElementById('reset').onclick=async()=>{await api('/api/reset','POST');toast('Demo reset complete.');dashboard();};
+  window.act=async(id,type)=>{await api(`/api/items/${id}/${type==='done'?'done':'notify'}`,'POST');toast(type==='done'?'Marked DONE':'Alert simulated');dashboard();};
+  renderRows();
+};
+
+const logsPage = async () => {
+ const data = await api('/api/logs'); state.logs=data.logs;
+ app.innerHTML=`<div class="page-header"><h1>Activity Log</h1><button class="btn" id="export">Export CSV</button></div><div class="card filters"><select id="ls"><option value="">All Status</option><option value="success">Success</option><option value="error">Error</option></select><select id="le"><option value="">All Events</option>${[...new Set(state.logs.map(l=>l.eventType))].map(e=>`<option>${e}</option>`).join('')}</select></div><div id="logrows"></div>`;
+ const render=()=>{const s=ls.value,e=le.value;const rows=state.logs.filter(l=>(!s||l.status===s)&&(!e||l.eventType===e));logrows.innerHTML=rows.length?`<table class='data-table'><thead><tr><th>Timestamp</th><th>Item</th><th>Event</th><th>Message</th><th>Status</th></tr></thead><tbody>${rows.map(l=>`<tr><td>${new Date(l.timestamp).toLocaleString()}</td><td>${l.itemId}<br>${l.itemName}</td><td>${l.eventType}</td><td>${l.message}</td><td>${badge(l.status==='success'?'OK':'Overdue')}</td></tr>`).join('')}</tbody></table>`:'<div class="card">No activity yet.</div>';};
+ window.ls=document.getElementById('ls');window.le=document.getElementById('le');window.logrows=document.getElementById('logrows');ls.oninput=render;le.oninput=render;render();
+ document.getElementById('export').onclick=()=>{const rows=state.logs.map(l=>[l.timestamp,l.itemId,l.itemName,l.eventType,l.message,l.status]);const csv=[['Timestamp','ItemID','ItemName','EventType','Message','Status'],...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='activity-logs.csv';a.click();};
+};
+
+const settings = () => app.innerHTML = `<h1>Settings</h1><p class='muted'>DEMO_MODE is enabled. Fields are read-only in demo.</p><div class='card settings-grid'><label>Google Sheet ID<input disabled value='demo-sheet-id-placeholder'></label><label>Sheet name<input disabled value='ExpiryTracker'></label><label>Alert channel<input disabled value='LINE Notify / Email'></label><label>Reminder rules<input disabled value='7 days, 30 days'></label></div><button class='btn primary' id='copy'>Copy sample config</button>`;
+
+(async()=>{try{if(path==='/')landing();else if(path==='/dashboard')await dashboard();else if(path==='/logs')await logsPage();else if(path==='/settings'){settings();document.getElementById('copy').onclick=()=>{navigator.clipboard.writeText('DEMO_MODE=true\nGOOGLE_SHEET_ID=your-sheet-id\nGOOGLE_SHEET_NAME=ExpiryTracker\nLINE_NOTIFY_TOKEN=your-line-token\nREMINDER_DAYS=7,30');toast('Sample config copied.');};}else location.href='/';}catch(e){app.innerHTML=`<div class='card'>${e.message}</div>`;}})();
+</script>
+</body>
+</html>
